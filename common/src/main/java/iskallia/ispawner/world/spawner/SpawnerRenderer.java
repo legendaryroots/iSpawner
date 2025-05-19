@@ -43,6 +43,45 @@ public class SpawnerRenderer {
 		private final Direction side;
 		private final int weight;
 		private final Color color;
+		
+		// Direction-specific configuration maps
+		private static final Map<Direction, Vector3f> ROTATION_AXES = Map.of(
+			Direction.UP, new Vector3f(1.0F, 0.0F, 0.0F),
+			Direction.DOWN, new Vector3f(1.0F, 0.0F, 0.0F),
+			Direction.NORTH, new Vector3f(0.0F, 1.0F, 0.0F),
+			Direction.SOUTH, new Vector3f(0.0F, 1.0F, 0.0F),
+			Direction.WEST, new Vector3f(0.0F, 1.0F, 0.0F),
+			Direction.EAST, new Vector3f(0.0F, 1.0F, 0.0F)
+		);
+		
+		private static final Map<Direction, Float> ROTATION_ANGLES = Map.of(
+			Direction.UP, 90.0F,
+			Direction.DOWN, -90.0F,
+			Direction.NORTH, 0.0F,
+			Direction.SOUTH, 180.0F,
+			Direction.WEST, 90.0F,
+			Direction.EAST, -90.0F
+		);
+		
+		// Offsets for each direction when calculating center position
+		private static final Map<Direction, float[]> POSITION_OFFSETS = Map.of(
+			Direction.UP, new float[]{0.0F, 1.01F, 11.5F / 16.0F},
+			Direction.DOWN, new float[]{0.0F, -0.01F, 4.5F / 16.0F},
+			Direction.NORTH, new float[]{0.0F, 11.5F / 16.0F, -0.01F},
+			Direction.SOUTH, new float[]{0.0F, 11.5F / 16.0F, 1.01F},
+			Direction.WEST, new float[]{-0.01F, 11.5F / 16.0F, 0.0F},
+			Direction.EAST, new float[]{1.01F, 11.5F / 16.0F, 0.0F}
+		);
+		
+		// Map of directions to offset calculations (true for positive, false for negative)
+		private static final Map<Direction, Boolean> CENTER_DIRECTIONS = Map.of(
+			Direction.UP, true,
+			Direction.DOWN, true,
+			Direction.NORTH, true,
+			Direction.SOUTH, false,
+			Direction.WEST, false,
+			Direction.EAST, true
+		);
 
 		public Face(BlockPos pos, Direction side, int weight) {
 			this.pos = pos;
@@ -54,114 +93,129 @@ public class SpawnerRenderer {
 		public void render(MatrixStack matrices, VertexConsumer vertexConsumer, Collection<Face> neighbors, BlockPos offset) {
 			matrices.push();
 			BlockPos p = this.pos.add(offset);
-
-			if(this.side == Direction.UP) {
-				double center = (8.0D + MinecraftClient.getInstance().textRenderer.getWidth(String.valueOf(this.weight)) / 2.0D) / 16.0D;
-				matrices.translate(p.getX() + center - 0.5D / 16.0D, p.getY() + 1.01D, p.getZ() + 11.5D / 16.0D);
-				matrices.multiply(new Quaternion(new Vector3f(1.0F, 0.0F, 0.0F), 90.0F, true));
-			} else if(this.side == Direction.DOWN) {
-				double center = (8.0D + MinecraftClient.getInstance().textRenderer.getWidth(String.valueOf(this.weight)) / 2.0D) / 16.0D;
-				matrices.translate(p.getX() + center - 0.5D / 16.0D, p.getY() - 0.01D, p.getZ() + 4.5D / 16.0D);
-				matrices.multiply(new Quaternion(new Vector3f(1.0F, 0.0F, 0.0F), -90.0F, true));
-			} else if(this.side == Direction.NORTH) {
-				double center = (8.0D + MinecraftClient.getInstance().textRenderer.getWidth(String.valueOf(this.weight)) / 2.0D) / 16.0D;
-				matrices.translate(p.getX() + center - 0.5D / 16.0D, p.getY() + 11.5D / 16.0D, p.getZ() - 0.01D);
-				matrices.multiply(new Quaternion(new Vector3f(0.0F, 1.0F, 0.0F), 0.0F, true));
-			} else if(this.side == Direction.SOUTH) {
-				double center = (8.0D - MinecraftClient.getInstance().textRenderer.getWidth(String.valueOf(this.weight)) / 2.0D) / 16.0D;
-				matrices.translate(p.getX() + center + 0.5D / 16.0D, p.getY() + 11.5D / 16.0D, p.getZ() + 1.01D);
-				matrices.multiply(new Quaternion(new Vector3f(0.0F, 1.0F, 0.0F), 180.0F, true));
-			} else if(this.side == Direction.WEST) {
-				double center = (8.0D - MinecraftClient.getInstance().textRenderer.getWidth(String.valueOf(this.weight)) / 2.0D) / 16.0D;
-				matrices.translate(p.getX() - 0.01D, p.getY() + 11.5D / 16.0D, p.getZ() + center + 0.5D / 16.0D);
-				matrices.multiply(new Quaternion(new Vector3f(0.0F, 1.0F, 0.0F), 90.0F, true));
-			} else if(this.side == Direction.EAST) {
-				double center = (8.0D + MinecraftClient.getInstance().textRenderer.getWidth(String.valueOf(this.weight)) / 2.0D) / 16.0D;
-				matrices.translate(p.getX() + 1.01D, p.getY() + 11.5D / 16.0D, p.getZ() + center - 0.5D / 16.0D);
-				matrices.multiply(new Quaternion(new Vector3f(0.0F, 1.0F, 0.0F), -90.0F, true));
+			
+			// Calculate text width and center position
+			float textWidth = MinecraftClient.getInstance().textRenderer.getWidth(String.valueOf(this.weight));
+			double center;
+			
+			// Get center position based on direction
+			boolean isPositiveDirection = CENTER_DIRECTIONS.get(this.side);
+			if (isPositiveDirection) {
+				center = (8.0D + textWidth / 2.0D) / 16.0D;
+			} else {
+				center = (8.0D - textWidth / 2.0D) / 16.0D;
 			}
+			
+			// Get position offsets for this direction
+			float[] posOffsets = POSITION_OFFSETS.get(this.side);
+			
+			// Calculate final position based on direction
+			float xOffset = isPositiveDirection ? (float)(center - 0.5D / 16.0D) : (float)(center + 0.5D / 16.0D);
+			matrices.translate(
+				p.getX() + (this.side == Direction.WEST || this.side == Direction.EAST ? posOffsets[0] : xOffset),
+				p.getY() + posOffsets[1],
+				p.getZ() + (this.side == Direction.NORTH || this.side == Direction.SOUTH ? posOffsets[2] : 
+					(this.side == Direction.WEST ? center + 0.5D / 16.0D : 
+					(this.side == Direction.EAST ? center - 0.5D / 16.0D : posOffsets[2])))
+			);
+			
+			// Apply rotation
+			matrices.multiply(new Quaternion(
+				ROTATION_AXES.get(this.side),
+				ROTATION_ANGLES.get(this.side),
+				true
+			));
 
+			// Draw text
 			matrices.scale(-0.0625F, -0.0625F, 0.0625F);
 			MinecraftClient.getInstance().textRenderer.draw(matrices, new LiteralText(String.valueOf(this.weight)), 0, 0, this.color.getRBG());
 			matrices.pop();
 
-			if(this.side == Direction.DOWN) {
-				if(!neighbors.contains(new Face(this.pos.north(), Direction.DOWN, this.weight))) {
-					drawLine(matrices, vertexConsumer, 0, 0, 0, 1, 0, 0, offset);
-				}
-				if(!neighbors.contains(new Face(this.pos.south(), Direction.DOWN, this.weight))) {
-					drawLine(matrices, vertexConsumer, 0, 0, 1, 1, 0, 1, offset);
-				}
-				if(!neighbors.contains(new Face(this.pos.east(), Direction.DOWN, this.weight))) {
-					drawLine(matrices, vertexConsumer, 1, 0, 0, 1, 0, 1, offset);
-				}
-				if(!neighbors.contains(new Face(this.pos.west(), Direction.DOWN, this.weight))) {
-					drawLine(matrices, vertexConsumer, 0, 0, 0, 0, 0, 1, offset);
-				}
-			} else if(this.side == Direction.UP) {
-				if(!neighbors.contains(new Face(this.pos.north(), Direction.UP, this.weight))) {
-					drawLine(matrices, vertexConsumer, 0, 1, 0, 1, 1, 0, offset);
-				}
-				if(!neighbors.contains(new Face(this.pos.south(), Direction.UP, this.weight))) {
-					drawLine(matrices, vertexConsumer, 0, 1, 1, 1, 1, 1, offset);
-				}
-				if(!neighbors.contains(new Face(this.pos.east(), Direction.UP, this.weight))) {
-					drawLine(matrices, vertexConsumer, 1, 1, 0, 1, 1, 1, offset);
-				}
-				if(!neighbors.contains(new Face(this.pos.west(), Direction.UP, this.weight))) {
-					drawLine(matrices, vertexConsumer, 0, 1, 0, 0, 1, 1, offset);
-				}
-			} else if(this.side == Direction.NORTH) {
-				if(!neighbors.contains(new Face(this.pos.down(), Direction.NORTH, this.weight))) {
-					drawLine(matrices, vertexConsumer, 0, 0, 0, 1, 0, 0, offset);
-				}
-				if(!neighbors.contains(new Face(this.pos.up(), Direction.NORTH, this.weight))) {
-					drawLine(matrices, vertexConsumer, 0, 1, 0, 1, 1, 0, offset);
-				}
-				if(!neighbors.contains(new Face(this.pos.east(), Direction.NORTH, this.weight))) {
-					drawLine(matrices, vertexConsumer, 1, 0, 0, 1, 1, 0, offset);
-				}
-				if(!neighbors.contains(new Face(this.pos.west(), Direction.NORTH, this.weight))) {
-					drawLine(matrices, vertexConsumer, 0, 0, 0, 0, 1, 0, offset);
-				}
-			} else if(this.side == Direction.SOUTH) {
-				if(!neighbors.contains(new Face(this.pos.down(), Direction.SOUTH, this.weight))) {
-					drawLine(matrices, vertexConsumer, 0, 0, 1, 1, 0, 1, offset);
-				}
-				if(!neighbors.contains(new Face(this.pos.up(), Direction.SOUTH, this.weight))) {
-					drawLine(matrices, vertexConsumer, 0, 1, 1, 1, 1, 1, offset);
-				}
-				if(!neighbors.contains(new Face(this.pos.east(), Direction.SOUTH, this.weight))) {
-					drawLine(matrices, vertexConsumer, 1, 0, 1, 1, 1, 1, offset);
-				}
-				if(!neighbors.contains(new Face(this.pos.west(), Direction.SOUTH, this.weight))) {
-					drawLine(matrices, vertexConsumer, 0, 0, 1, 0, 1, 1, offset);
-				}
-			} else if(this.side == Direction.WEST) {
-				if(!neighbors.contains(new Face(this.pos.down(), Direction.WEST, this.weight))) {
-					drawLine(matrices, vertexConsumer, 0, 0, 0, 0, 0, 1, offset);
-				}
-				if(!neighbors.contains(new Face(this.pos.up(), Direction.WEST, this.weight))) {
-					drawLine(matrices, vertexConsumer, 0, 1, 0, 0, 1, 1, offset);
-				}
-				if(!neighbors.contains(new Face(this.pos.north(), Direction.WEST, this.weight))) {
-					drawLine(matrices, vertexConsumer, 0, 0, 0, 0, 1, 0, offset);
-				}
-				if(!neighbors.contains(new Face(this.pos.south(), Direction.WEST, this.weight))) {
-					drawLine(matrices, vertexConsumer, 0, 0, 1, 0, 1, 1, offset);
-				}
-			} else if(this.side == Direction.EAST) {
-				if(!neighbors.contains(new Face(this.pos.down(), Direction.EAST, this.weight))) {
-					drawLine(matrices, vertexConsumer, 1, 0, 0, 1, 0, 1, offset);
-				}
-				if(!neighbors.contains(new Face(this.pos.up(), Direction.EAST, this.weight))) {
-					drawLine(matrices, vertexConsumer, 1, 1, 0, 1, 1, 1, offset);
-				}
-				if(!neighbors.contains(new Face(this.pos.north(), Direction.EAST, this.weight))) {
-					drawLine(matrices, vertexConsumer, 1, 0, 0, 1, 1, 0, offset);
-				}
-				if(!neighbors.contains(new Face(this.pos.south(), Direction.EAST, this.weight))) {
-					drawLine(matrices, vertexConsumer, 1, 0, 1, 1, 1, 1, offset);
+			// Draw boundary lines
+			renderBoundaryLines(matrices, vertexConsumer, neighbors, offset);
+		}
+		
+		private void renderBoundaryLines(MatrixStack matrices, VertexConsumer vertexConsumer, Collection<Face> neighbors, BlockPos offset) {
+			// A map of directions to check for each face orientation
+			Map<Direction, Direction[]> directionsToCheck = Map.of(
+				Direction.DOWN, new Direction[]{Direction.NORTH, Direction.SOUTH, Direction.EAST, Direction.WEST},
+				Direction.UP, new Direction[]{Direction.NORTH, Direction.SOUTH, Direction.EAST, Direction.WEST},
+				Direction.NORTH, new Direction[]{Direction.DOWN, Direction.UP, Direction.EAST, Direction.WEST},
+				Direction.SOUTH, new Direction[]{Direction.DOWN, Direction.UP, Direction.EAST, Direction.WEST},
+				Direction.WEST, new Direction[]{Direction.DOWN, Direction.UP, Direction.NORTH, Direction.SOUTH},
+				Direction.EAST, new Direction[]{Direction.DOWN, Direction.UP, Direction.NORTH, Direction.SOUTH}
+			);
+			
+			// Line coordinates for each face+direction combination
+			Map<Direction, Map<Direction, double[]>> lineCoords = new HashMap<>();
+			
+			// DOWN face lines
+			lineCoords.put(Direction.DOWN, Map.of(
+				Direction.NORTH, new double[]{0, 0, 0, 1, 0, 0},
+				Direction.SOUTH, new double[]{0, 0, 1, 1, 0, 1},
+				Direction.EAST, new double[]{1, 0, 0, 1, 0, 1},
+				Direction.WEST, new double[]{0, 0, 0, 0, 0, 1}
+			));
+			
+			// UP face lines
+			lineCoords.put(Direction.UP, Map.of(
+				Direction.NORTH, new double[]{0, 1, 0, 1, 1, 0},
+				Direction.SOUTH, new double[]{0, 1, 1, 1, 1, 1},
+				Direction.EAST, new double[]{1, 1, 0, 1, 1, 1},
+				Direction.WEST, new double[]{0, 1, 0, 0, 1, 1}
+			));
+			
+			// NORTH face lines
+			lineCoords.put(Direction.NORTH, Map.of(
+				Direction.DOWN, new double[]{0, 0, 0, 1, 0, 0},
+				Direction.UP, new double[]{0, 1, 0, 1, 1, 0},
+				Direction.EAST, new double[]{1, 0, 0, 1, 1, 0},
+				Direction.WEST, new double[]{0, 0, 0, 0, 1, 0}
+			));
+			
+			// SOUTH face lines
+			lineCoords.put(Direction.SOUTH, Map.of(
+				Direction.DOWN, new double[]{0, 0, 1, 1, 0, 1},
+				Direction.UP, new double[]{0, 1, 1, 1, 1, 1},
+				Direction.EAST, new double[]{1, 0, 1, 1, 1, 1},
+				Direction.WEST, new double[]{0, 0, 1, 0, 1, 1}
+			));
+			
+			// WEST face lines
+			lineCoords.put(Direction.WEST, Map.of(
+				Direction.DOWN, new double[]{0, 0, 0, 0, 0, 1},
+				Direction.UP, new double[]{0, 1, 0, 0, 1, 1},
+				Direction.NORTH, new double[]{0, 0, 0, 0, 1, 0},
+				Direction.SOUTH, new double[]{0, 0, 1, 0, 1, 1}
+			));
+			
+			// EAST face lines
+			lineCoords.put(Direction.EAST, Map.of(
+				Direction.DOWN, new double[]{1, 0, 0, 1, 0, 1},
+				Direction.UP, new double[]{1, 1, 0, 1, 1, 1},
+				Direction.NORTH, new double[]{1, 0, 0, 1, 1, 0},
+				Direction.SOUTH, new double[]{1, 0, 1, 1, 1, 1}
+			));
+			
+			// Direction functions map - how to get neighboring position for each direction
+			Map<Direction, Function<BlockPos, BlockPos>> neighborFuncs = Map.of(
+				Direction.NORTH, BlockPos::north,
+				Direction.SOUTH, BlockPos::south,
+				Direction.EAST, BlockPos::east,
+				Direction.WEST, BlockPos::west,
+				Direction.UP, BlockPos::up,
+				Direction.DOWN, BlockPos::down
+			);
+			
+			// Check each direction and draw lines if needed
+			for (Direction checkDir : directionsToCheck.get(this.side)) {
+				BlockPos neighborPos = neighborFuncs.get(checkDir).apply(this.pos);
+				if (!neighbors.contains(new Face(neighborPos, this.side, this.weight))) {
+					double[] coords = lineCoords.get(this.side).get(checkDir);
+					drawLine(matrices, vertexConsumer, 
+						coords[0], coords[1], coords[2], 
+						coords[3], coords[4], coords[5], 
+						offset);
 				}
 			}
 		}

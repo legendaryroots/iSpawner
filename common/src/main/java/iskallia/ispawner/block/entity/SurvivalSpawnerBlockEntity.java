@@ -27,6 +27,14 @@ import java.util.OptionalInt;
 
 public class SurvivalSpawnerBlockEntity extends SpawnerBlockEntity implements ExtendedMenuProvider {
 
+	// Cache for spawn action directions - no need to recreate this array for every position
+	private static final Direction[] ALL_DIRECTIONS = new Direction[] {
+		Direction.UP, Direction.NORTH, Direction.EAST, Direction.SOUTH, Direction.WEST, Direction.DOWN
+	};
+	
+	// Flag to track if we've initialized the spawn actions after rotation changes
+	private BlockRotation lastRotation = null;
+
 	public SimpleInventory input = new SimpleInventory(1) {
 		@Override
 		public boolean canInsert(int slot, ItemStack stack, @Nullable Direction dir) {
@@ -74,21 +82,43 @@ public class SurvivalSpawnerBlockEntity extends SpawnerBlockEntity implements Ex
 			}
 		}
 
-		if(this.manager.actions.isEmpty()) {
+		// Only rebuild the action list if it's empty OR if the rotation has changed
+		BlockRotation currentRotation = this.getReverseRotation();
+		if(this.manager.actions.isEmpty() || currentRotation != lastRotation) {
+			this.lastRotation = currentRotation;
+			initializeSpawnActions(currentRotation);
+		}
+	}
+	
+	/**
+	 * Initialize all possible spawn actions in the spawner's area of effect.
+	 * This is separated into its own method for clarity and to avoid recreating
+	 * objects in the tick method.
+	 */
+	private void initializeSpawnActions(BlockRotation rotation) {
+		// Clear existing actions first
+		this.manager.actions.clear();
+		
+		// Reuse the hit position offset for all actions
+		Vec3d hitPosOffset = new Vec3d(0.5D, 1.0D, 0.5D);
+		Vec3d rotatedHitPos = SpawnerAction.rotate(rotation, hitPosOffset);
+		Direction rotatedDirection = rotation.rotate(Direction.UP);
+		
+		// Calculate and add all spawn positions
+		for(int y = -2; y <= 1; y++) {
 			for(int x = -4; x <= 4; x++) {
 				for(int z = -4; z <= 4; z++) {
-					for(int y = -2; y <= 1; y++) {
-						int weight = 4 - Math.max(Math.abs(x), Math.abs(z)) + 1;
-						BlockRotation rotation = this.getReverseRotation();
-						Vec3d hitPosOffset = new Vec3d(0.5D, 1.0D, 0.5D);
-
-						this.manager.addAction(new SpawnerAction(
-							new BlockPos(x, y, z).rotate(rotation),
-							rotation.rotate(Direction.UP),
-							SpawnerAction.rotate(rotation, hitPosOffset),
-							Hand.MAIN_HAND,
-							new Direction[] {Direction.UP, Direction.NORTH, Direction.EAST, Direction.SOUTH, Direction.WEST, Direction.DOWN}), weight);
-					}
+					// Calculate weight based on max distance from center
+					int weight = 4 - Math.max(Math.abs(x), Math.abs(z)) + 1;
+					
+					// Create and add the spawn action with a single BlockPos object
+					BlockPos pos = new BlockPos(x, y, z).rotate(rotation);
+					this.manager.addAction(new SpawnerAction(
+						pos,
+						rotatedDirection,
+						rotatedHitPos,
+						Hand.MAIN_HAND,
+						ALL_DIRECTIONS), weight);
 				}
 			}
 		}
